@@ -122,13 +122,3 @@ Post-Monsoon → Oct, Nov
 - Target: `AQI`
 
 ---
-
-## Stack
-
-Python · Pandas · NumPy · Matplotlib · Seaborn
-
----
-
-## Author
-
-Your Name — [GitHub](https://github.com/yourusername)

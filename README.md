@@ -1,6 +1,7 @@
 # Air Quality Index (AQI) Analysis — India
 
-A data analysis project examining air quality patterns across Indian cities using pollutant concentration data from 2015–2020.
+A data analysis project examining air quality patterns across 
+Indian cities using pollutant concentration data from 2015–2020.
 
 ---
 
@@ -13,90 +14,76 @@ Five relational tables sourced from CPCB (Central Pollution Control Board):
 | `city_day.csv` | City × Day | ~26K |
 | `city_hour.csv` | City × Hour | ~100K |
 | `station_day.csv` | Station × Day | ~108K |
-| `station_hour.csv` | Station × Hour | ~400K |
+| `station_hour.csv` | Station × Hour | ~2.3M |
 | `stations.csv` | Station metadata | ~400 |
 
-**Pollutants tracked:** PM2.5, PM10, NO, NO2, NOx, NH3, CO, SO2, O3, Benzene, Toluene, Xylene
+**Pollutants tracked:** PM2.5, PM10, NO, NO2, NOx, NH3, CO, 
+SO2, O3, Benzene, Toluene, Xylene
 
 ---
 
 ## Data Cleaning
 
 - Dropped `Xylene` — missing rate of 61–79% across all tables
-- Imputed pollutant nulls using **city/station-wise median** to preserve local pollution baselines and resist skew from extreme events
-- Applied global median as fallback where group-wise median was unavailable
+- Dropped rows where almost all values were NaN
+- Imputed pollutant nulls using **city/station-wise median** 
+  to preserve local pollution baselines and resist skew from 
+  extreme events
+- Applied global median as fallback where group-wise median 
+  was unavailable (e.g. cities where entire column was missing)
 - Removed rows with null `AQI` — target variable cannot be imputed
-- Parsed `Date`/`Datetime` to `datetime64`; extracted `Hour`, `Month`, `Year`, `Season`
+- Parsed `Date`/`Datetime` to `datetime64`
 
 ---
 
 ## EDA Conclusions
 
 ### `city_day.csv`
-- AQI distribution is right-skewed — extreme pollution events in north Indian cities pull the mean above median
-- Top 5 most polluted cities: **Ahmedabad, Delhi, Patna, Gurugram, Lucknow**
-- PM2.5 and PM10 exhibit strongest linear correlation with AQI among all pollutants
-- Winter months (Dec–Feb) record significantly higher AQI due to atmospheric boundary layer compression and crop burning
-- `AQI_Bucket` is a deterministic function of `AQI` — not an independent feature
-
-### `city_hour.csv`
-- AQI follows a consistent V-shaped diurnal pattern — peaking at 00:00–05:00 hrs, minima at 13:00–16:00 hrs
-- Nocturnal AQI is approximately 2.5× higher than afternoon values across all cities
-- Ahmedabad anomaly: nocturnal AQI ≈ 640 vs inter-city mean of ~240 — indicative of localized industrial sources
-- Secondary AQI elevation observed at 13:00 hrs — consistent with midday vehicular and industrial activity
-- Hour-of-day is a statistically significant predictor of AQI regardless of city
-
-### `station_day.csv`
-- Station-level data shows higher variance than city-level — city aggregation smooths out extreme readings
-- NH3 and PM10 have highest missing value rates (~40–44%) across all stations
-- Pollutant correlation patterns are consistent with city_day findings
-- Some stations record consistently anomalous values — potential sensor calibration issues
-
-### `station_hour.csv`
-- Diurnal cycle confirmed at station level — consistent with city_hour findings
-- Hourly variance is higher at individual stations than city-aggregated data
-- PM2.5 spikes are more pronounced at night at station level than reflected in city averages
+- AQI distribution is right-skewed — extreme pollution events 
+  in north Indian cities pull the mean above median
+- Delhi and Lucknow have the most inactive monitoring stations
+- Kochi and Ernakulam are the only cities with unknown (NaN) 
+  station status
+- PM2.5 shows strongest correlation with AQI (0.84) among 
+  all pollutants
+- O3 shows near-zero correlation with AQI (-0.14)
+- `AQI_Bucket` is a deterministic function of `AQI` — 
+  not an independent feature
 
 ### `stations.csv`
-- Monitoring infrastructure is concentrated in larger metropolitan areas — smaller cities are under-monitored
-- Significant portion of stations have unknown operational status (`NaN`) — data collection gaps exist
-- States with higher industrialization have more active monitoring stations
+- Monitoring infrastructure is concentrated in larger 
+  metropolitan areas — smaller cities are under-monitored
+- 98.3% of station readings are from Active stations — 
+  network is healthy
+- Only Delhi and Lucknow have Inactive stations (1.3% total)
+- Inactive and unknown status stations concentrated in 
+  just 4 cities — Delhi, Lucknow, Kochi, Ernakulam
 
----
-
-## Merging Strategy
-
-City-level and station-level tables are kept separate due to different granularities.
-
-Logical merges performed:
-```
-stations + station_day  → merged on StationId → adds City, State info
-stations + station_hour → merged on StationId → adds City, State info
-```
-
-City tables (`city_day`, `city_hour`) are used independently.
+### `station_hour.csv` (merged with stations.csv)
+- Merged on StationId to add City and State information
+- 2.3M rows after merge
+- Diurnal pollution cycle confirmed at station level
 
 ---
 
 ## Feature Engineering
 
-Applied to all tables:
-
 | Feature | Derived From | Rationale |
 |---|---|---|
-| `Month` | Date/Datetime | Captures seasonal pollution variation |
+| `Month` | Date/Datetime | Captures seasonal variation |
 | `Year` | Date/Datetime | Captures year-over-year trends |
-| `Season` | Month | Winter/Summer/Monsoon/Post-Monsoon grouping |
-| `Is_Winter` | Month | Binary flag for peak pollution season |
-| `Hour` | Datetime (hourly tables only) | Encodes diurnal pollution cycle |
-| `Time_of_Day` | Hour (hourly tables only) | Morning/Afternoon/Evening/Night bucket |
+| `Season` | Month | Winter/Summer/Monsoon grouping |
+| `Hour` | Datetime (hourly tables) | Encodes diurnal pollution cycle |
+| `City_encoded` | City | Target encoding — mean AQI per city |
+| `State_encoded` | State | Target encoding — mean AQI per state |
+| `Date` | Datetime | Extracted date component |
+| `Time` | Datetime | Extracted time component |
 
 **Season Mapping:**
 ```
-Winter       → Dec, Jan, Feb
-Summer       → Mar, Apr, May
-Monsoon      → Jun, Jul, Aug, Sep
-Post-Monsoon → Oct, Nov
+Winter  → Dec, Jan, Feb
+Summer  → Mar, Apr, May
+Monsoon → Jun, Jul, Aug, Sep
 ```
 
 ---
@@ -106,19 +93,42 @@ Post-Monsoon → Oct, Nov
 ### Encoding
 | Column | Strategy | Reason |
 |---|---|---|
-| `Season` | Label Encoding | Ordinal — natural pollution order across seasons |
-| `City` / `State` | Target Encoding | Too many categories for One-Hot |
-| `AQI_Bucket` | Drop | Data leakage — direct derivative of target |
-
-### Scaling
-- All pollutants + engineered features → **StandardScaler**
-- Chosen over MinMaxScaler due to presence of outliers from real pollution spike events
+| `Season` | One Hot Encoding | No natural order between seasons |
+| `City` | Target Encoding | High cardinality — 26 cities |
+| `State` | Target Encoding | High cardinality — multiple states |
+| `AQI_Bucket` | Dropped | Data leakage — direct derivative of target |
 
 ### Feature Selection Strategy
-- Drop features with correlation |r| < 0.1 against AQI
-- Apply VIF analysis — drop features with VIF > 10 to handle multicollinearity
-- Drop one of `NO` / `NO2` / `NOx` — highly intercorrelated (same chemical family)
-- Retain: PM2.5, PM10, NH3, CO, SO2, O3, Benzene, Toluene + engineered time features
-- Target: `AQI`
+
+Three methods applied:
+
+**1. Filter — Correlation Analysis**
+- Dropped `O3` → correlation of -0.14 with AQI (near zero)
+- Dropped `NOx` → highly correlated with NO (0.78), redundant
+- Dropped `PM10` → highly correlated with PM2.5 (0.90), redundant
+
+**2. Filter — Variance Threshold**
+- Applied with threshold = 0.0
+- No columns dropped — all features had meaningful variance
+- Confirms dataset is rich and varied
+
+**3. Embedded — Random Forest Feature Importance**
+- Dropped `Season_*` columns → near zero importance
+- Dropped `NH3`, `NO`, `CO` → near zero importance
+- PM2.5 emerged as dominant predictor (0.92 importance score)
+
+### Final Selected Features
+| Feature | Importance |
+|---------|-----------|
+| PM2.5 | 0.92 — primary AQI driver |
+| NO2 | Moderate |
+| SO2 | Moderate |
+| Toluene | Moderate |
+| Benzene | Moderate |
+
+### Key Finding
+> PM2.5 alone accounts for 92% of AQI prediction importance. 
+> Location (City/State) encoding dominates when included — 
+> indicating where you are matters as much as what you breathe.
 
 ---
